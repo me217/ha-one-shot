@@ -40,4 +40,4 @@ HISTORY_LIMIT = 20
 SIGNAL_UPDATED = f"{DOMAIN}_updated"
 PANEL_URL_PATH = "one-shot"
 PANEL_STATIC_URL = f"/{DOMAIN}_static"
-VERSION = "0.7.0"
+VERSION = "0.7.1"

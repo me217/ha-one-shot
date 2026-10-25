@@ -23,7 +23,7 @@ async def async_setup_entry(
 class OneShotActiveSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "Active"
-    _attr_icon = "mdi:timer-sand"
+    _attr_icon = "mdi:bullseye-arrow"
     _attr_should_poll = False
     _attr_native_unit_of_measurement = "One Shots"
 

@@ -83,6 +83,10 @@ Set in the integration options:
 - **Admin-only device types:** e.g. everyone can control lights but only admins can control climate.
 - **Ownership:** each One Shot remembers who made it. Non-admins can only list and cancel their own; admins see everything (and who made it) on the sidebar page. A proposal can only be confirmed by the user who made it.
 
+## Icon
+
+The integration ships its own icon and logo (`custom_components/one_shot/brand/`), which Home Assistant 2026.3 and newer shows on the integrations page. Older versions show a generic icon; everything else works the same.
+
 ## Requirements
 
 - Home Assistant 2024.10 or newer.

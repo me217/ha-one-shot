@@ -53,7 +53,7 @@ async def _async_setup_panel(hass: HomeAssistant) -> None:
         frontend_url_path=PANEL_URL_PATH,
         module_url=f"{PANEL_STATIC_URL}/one-shot-panel.js?v={VERSION}",
         sidebar_title="One Shot",
-        sidebar_icon="mdi:timer-sand",
+        sidebar_icon="mdi:bullseye-arrow",
         require_admin=True,
         config={},
     )
