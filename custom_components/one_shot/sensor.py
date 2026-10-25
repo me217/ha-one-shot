@@ -38,7 +38,7 @@ class OneShotActiveSensor(SensorEntity):
 
     @property
     def native_value(self) -> int:
-        return len(self._manager.watches)
+        return len(self._manager.watches) + len(self._manager.runs)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -46,6 +46,10 @@ class OneShotActiveSensor(SensorEntity):
             "one_shots": [
                 {"summary": w["summary"], "expires": w["expires"]}
                 for w in self._manager.watches.values()
+            ],
+            "running": [
+                {"summary": r["summary"], "resumes_at": r["resume_at"]}
+                for r in self._manager.runs.values()
             ],
             "last_result": self._manager.history[0] if self._manager.history else None,
         }

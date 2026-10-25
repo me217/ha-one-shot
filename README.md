@@ -41,7 +41,9 @@ It is **not** a replacement for normal automations. It is for the "just this onc
 "only if I'm home", "only after 17:00", "only on weekdays", "only if the sun is down", "only if a numeric sensor is above/below something". If they aren't met, an event trigger keeps waiting; a time/delay trigger has no second chance, so the One Shot ends as *Skipped*.
 
 **Actions** (what it does)
-Service calls on devices you have exposed to Assist, up to 5 steps, with optional **wait steps** (1-120 minutes) between them: "pump on, wait 10 minutes, pump off".
+Service calls on devices you have exposed to Assist, up to 5 steps, with optional **wait steps** (1-120 minutes) between them: "pump on, wait 10 minutes, pump off". Once triggered, a One Shot that is waiting stays on the sidebar page as *Running* (with a Cancel button) and picks up again after a Home Assistant restart.
+
+Note the difference: "if the door opens, wait 10 minutes, then do X" fires immediately and then waits; "if the door is open **for** 10 minutes" needs it to stay open throughout. Assist asks if you're unclear which you mean.
 
 ## How it works
 
@@ -114,7 +116,7 @@ Set in the integration options:
 ## Known limits
 
 - If the trigger's state is already true when you ask, it waits for the *next* change (the model is told to say so).
-- A wait step in progress doesn't survive a Home Assistant restart, and the result notification only arrives when the whole sequence finishes.
+- A wait step that ends while Home Assistant is down resumes if it is less than 10 minutes late; otherwise that One Shot is skipped and you're told. The result notification arrives when the whole sequence finishes.
 - A timed One Shot (time/delay/date) that came due while HA was down fires if it's less than 10 minutes late; otherwise it's skipped and you're told.
 - The sidebar page is view-and-cancel only; creating a One Shot is done through Assist.
 - "Confirmation required" is enforced by checking that a new user message arrived after the proposal. This depends on Home Assistant exposing the conversation to tools; if it doesn't, a weaker fallback applies (the same request can't both propose and confirm).

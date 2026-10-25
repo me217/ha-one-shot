@@ -89,9 +89,11 @@ class WatchManager:
         self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.watches: dict[str, dict[str, Any]] = {}
         self.history: list[dict[str, Any]] = []
+        self.runs: dict[str, dict[str, Any]] = {}  # triggered, currently waiting between steps
         self._pending: dict[str, tuple[float, dict[str, Any]]] = {}
         self._unsub_trigger: dict[str, list[Callable[[], None]]] = {}
         self._unsub_expiry: dict[str, Callable[[], None]] = {}
+        self._unsub_run: dict[str, Callable[[], None]] = {}
 
     # ---- options -------------------------------------------------------
 
@@ -179,17 +181,28 @@ class WatchManager:
                 self.hass.async_create_task(
                     self._fire(wid, "the scheduled time (just after a restart)", timed=True)
                 )
+        for rid, run in data.get("runs", {}).items():
+            when = dt_util.parse_datetime(run["resume_at"])
+            if when <= now and now - when > MISSED_GRACE:
+                self._record(run, rid, "skipped", "Home Assistant was down when the wait ended")
+                self._announce(f"One Shot skipped (HA was down when its wait ended): {run['title']}")
+                continue
+            self.runs[rid] = run
+            if when <= now:
+                self.hass.async_create_task(self._resume_run(rid))
+            else:
+                self._schedule_resume(rid)
         await self._save()
 
     @callback
     def async_shutdown(self) -> None:
-        for unsub in (*(u for us in self._unsub_trigger.values() for u in us), *self._unsub_expiry.values()):
+        for unsub in (*(u for us in self._unsub_trigger.values() for u in us), *self._unsub_expiry.values(), *self._unsub_run.values()):
             unsub()
         self._unsub_trigger.clear()
         self._unsub_expiry.clear()
 
     async def _save(self) -> None:
-        await self._store.async_save({"watches": self.watches, "history": self.history})
+        await self._store.async_save({"watches": self.watches, "runs": self.runs, "history": self.history})
         async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     def _record(self, watch: dict[str, Any], wid: str, status: str, detail: str = "") -> None:
@@ -209,7 +222,7 @@ class WatchManager:
 
     async def panel_data(self) -> dict[str, Any]:
         names: dict[str | None, str] = {}
-        for src in (self.watches.values(), self.history):
+        for src in (self.watches.values(), self.runs.values(), self.history):
             for item in src:
                 owner = item.get("owner")
                 if owner not in names:
@@ -224,6 +237,17 @@ class WatchManager:
                     **{k: w[k] for k in ("summary", "created", "expires")},
                 }
                 for wid, w in self.watches.items()
+            ],
+            "runs": [
+                {
+                    "id": rid,
+                    "title": _label(r),
+                    "summary": r["summary"],
+                    "owner": names[r.get("owner")],
+                    "resume_at": r["resume_at"],
+                    "steps_left": len([s for s in r["steps"][r["next"]:] if "delay" not in s]),
+                }
+                for rid, r in self.runs.items()
             ],
             "history": [{**h, "owner": names.get(h.get("owner"), "")} for h in self.history],
         }
@@ -424,41 +448,60 @@ class WatchManager:
 
     # ---- list / cancel -----------------------------------------------------
 
-    def _visible(self, user_id: str | None, is_admin: bool) -> dict[str, dict[str, Any]]:
-        """Admins see everything; everyone else only their own watches."""
+    def _visible(
+        self, user_id: str | None, is_admin: bool, table: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Admins see everything; everyone else only their own."""
         return {
-            wid: w
-            for wid, w in self.watches.items()
-            if is_admin or w.get("owner") == user_id
+            k: v
+            for k, v in (self.watches if table is None else table).items()
+            if is_admin or v.get("owner") == user_id
         }
 
     async def async_list(self, user_id: str | None = None) -> list[dict[str, Any]]:
         is_admin = await self._check_access(user_id)
-        return [
-            {"title": _label(w), "summary": w["summary"], "expires": w["expires"]}
+        armed = [
+            {"title": _label(w), "summary": w["summary"], "status": "waiting for its trigger", "expires": w["expires"]}
             for w in self._visible(user_id, is_admin).values()
         ]
+        running = [
+            {"title": _label(r), "summary": r["summary"], "status": "triggered, waiting between steps", "resumes_at": r["resume_at"]}
+            for r in self._visible(user_id, is_admin, self.runs).values()
+        ]
+        return armed + running
 
     async def async_cancel(self, ref: str, user_id: str | None = None) -> dict[str, Any]:
-        """Cancel by id, or by a unique substring of the summary."""
+        """Cancel by title (or id / words from the summary), armed or running."""
         is_admin = await self._check_access(user_id)
         ref_l = ref.strip().lower()
+        pool = {
+            **{k: ("armed", v) for k, v in self._visible(user_id, is_admin).items()},
+            **{k: ("running", v) for k, v in self._visible(user_id, is_admin, self.runs).items()},
+        }
         matches = [
-            wid
-            for wid, w in self._visible(user_id, is_admin).items()
-            if wid == ref_l or ref_l in _label(w).lower() or ref_l in w["summary"].lower()
+            k
+            for k, (_, v) in pool.items()
+            if k == ref_l or ref_l in _label(v).lower() or ref_l in v["summary"].lower()
         ]
         if not matches:
             raise WatchError("No active One Shot matches that.")
         if len(matches) > 1:
-            titles = ", ".join(_label(self.watches[x]) for x in matches)
+            titles = ", ".join(_label(pool[x][1]) for x in matches)
             raise WatchError(f"More than one One Shot matches ({titles}); say which one.")
         wid = matches[0]
-        watch = self.watches[wid]
-        self._record(watch, wid, "cancelled")
-        await self._remove(wid)
-        self._logbook(f"{_label(watch)}: cancelled")
-        return {"status": "cancelled", "title": _label(watch), "summary": watch["summary"]}
+        kind, item = pool[wid]
+        if kind == "running":
+            unsub = self._unsub_run.pop(wid, None)
+            if unsub:
+                unsub()
+            self.runs.pop(wid, None)
+            self._record(item, wid, "cancelled", "cancelled while waiting between steps")
+            await self._save()
+        else:
+            self._record(item, wid, "cancelled")
+            await self._remove(wid)
+        self._logbook(f"{_label(item)}: cancelled")
+        return {"status": "cancelled", "title": _label(item), "summary": item["summary"]}
 
     # ---- arming / firing -----------------------------------------------------
 
@@ -543,37 +586,89 @@ class WatchManager:
             return
 
         await self._remove(wid)  # first, so it can never fire twice
-        offline = self._unavailable(watch["actions"])
-        detail = ""
-        try:
-            script = Script(
-                self.hass,
-                cv.SCRIPT_SCHEMA(watch["actions"]),
-                f"One Shot: {watch['summary']}",
-                DOMAIN,
-            )
-            await script.async_run(context=Context())
-            outcome = "done"
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.exception("One Shot %s failed", wid)
-            outcome = f"FAILED ({err})"
-            detail = str(err)
+        run = {
+            "id": wid,
+            "title": _label(watch),
+            "summary": watch["summary"],
+            "owner": watch.get("owner"),
+            "steps": watch["actions"],
+            "next": 0,
+            "resume_at": None,
+            "source": source,
+            "offline": self._unavailable(watch["actions"]),
+        }
+        if any("delay" in s for s in run["steps"]):
+            self._logbook(f"{run['title']}: triggered{via}; running")
+        await self._execute(run)
+
+    async def _execute(self, run: dict[str, Any]) -> None:
+        """Run the remaining steps. A wait is saved to storage so it survives a restart."""
+        rid = run["id"]
+        steps = run["steps"]
+        while run["next"] < len(steps):
+            step = steps[run["next"]]
+            if "delay" in step:
+                minutes = step["delay"]["minutes"]
+                run["next"] += 1
+                run["resume_at"] = (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat()
+                self.runs[rid] = run
+                self._schedule_resume(rid)
+                await self._save()
+                self._logbook(f"{run['title']}: waiting {minutes} min before the next step")
+                return
+            try:
+                script = Script(
+                    self.hass,
+                    cv.SCRIPT_SCHEMA([step]),
+                    f"One Shot: {run['summary']}",
+                    DOMAIN,
+                )
+                await script.async_run(context=Context())
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("One Shot %s failed", rid)
+                await self._finish_run(run, str(err))
+                return
+            run["next"] += 1
+        await self._finish_run(run)
+
+    def _schedule_resume(self, rid: str) -> None:
+        @callback
+        def _resume(_now: datetime) -> None:
+            self.hass.async_create_task(self._resume_run(rid))
+
+        self._unsub_run[rid] = async_track_point_in_utc_time(
+            self.hass, _resume, dt_util.parse_datetime(self.runs[rid]["resume_at"])
+        )
+
+    async def _resume_run(self, rid: str) -> None:
+        run = self.runs.pop(rid, None)
+        if run is None:  # cancelled while waiting
+            return
+        self._unsub_run.pop(rid, None)
+        run["resume_at"] = None
+        await self._execute(run)
+
+    async def _finish_run(self, run: dict[str, Any], error: str = "") -> None:
+        rid = run["id"]
+        via = f"triggered by {run['source']}" if run.get("source") else ""
+        offline = run.get("offline") or []
         note = f"not reachable at the time: {', '.join(offline)}" if offline else ""
-        info = "; ".join(x for x in ((detail or via.strip(" ()")), note) if x)
-        self._record(watch, wid, "failed" if detail else "done", info)
+        info = "; ".join(x for x in (error, via, note) if x)
+        outcome = f"FAILED ({error})" if error else "done"
+        self._record(run, rid, "failed" if error else "done", info)
         await self._save()
         self.hass.bus.async_fire(
             EVENT_COMPLETED,
             {
-                "id": wid,
-                "title": _label(watch),
-                "summary": watch["summary"],
+                "id": rid,
+                "title": run["title"],
+                "summary": run["summary"],
                 "outcome": outcome,
-                "triggered_by": source,
+                "triggered_by": run.get("source", ""),
             },
         )
-        self._logbook(f"{_label(watch)}: {outcome}{via}")
-        self._announce(f"One Shot {outcome}: {_label(watch)}" + (f" ({note})" if note else ""))
+        self._logbook(f"{run['title']}: {outcome}" + (f" ({via})" if via else ""))
+        self._announce(f"One Shot {outcome}: {run['title']}" + (f" ({note})" if note else ""))
 
     async def _expire(self, wid: str) -> None:
         watch = self.watches.get(wid)

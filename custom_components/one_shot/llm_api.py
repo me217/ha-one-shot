@@ -53,7 +53,7 @@ Do NOT use the timer tools (HassStartTimer etc.) for this. If the user says "set
 delay One Shot instead; no separate timer is needed. Only use trigger_type timer if a timer.* entity already exists.
 For "in X minutes/hours" use trigger_type delay, NOT time. Use 'time' only for a clock time ("at 5pm"),
 and 'datetime' when a specific day is named. If the date or time is unclear, ask.
-A wait step inside actions keeps running in memory and does not survive a Home Assistant restart.
+Wait steps inside actions are saved and survive a Home Assistant restart. For "if X happens, wait N minutes, then do Y" use a wait step; for "if X stays that way for N minutes" use for_minutes on the trigger. If unclear which is meant, ask.
 If a tool returns an error, tell the user the reason plainly (it may be a permission limit); do not try to work around it.
 Refer to One Shots by their title. Never read out tokens or internal codes to the user.
 Tokens expire after {PENDING_TTL_SECONDS // 60} minutes. Use list_oneshots / cancel_oneshot to manage active One Shots.

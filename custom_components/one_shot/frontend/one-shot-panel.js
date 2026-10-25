@@ -83,6 +83,7 @@ class OneShotPanel extends HTMLElement {
   _render() {
     const root = this.shadowRoot;
     const { watches, history } = this._data;
+    const runs = this._data.runs || [];
 
     const style = h("style", {}, `
       :host { display:block; background:var(--primary-background-color); color:var(--primary-text-color);
@@ -120,7 +121,15 @@ class OneShotPanel extends HTMLElement {
             h("div", { class: "sum" }, w.summary),
             h("div", { class: "meta" }, `${w.fires ? "Fires in " + remaining(w.fires) : "Expires in " + remaining(w.expires)} · ${w.owner} · created ${new Date(w.created).toLocaleString()}`)),
           h("button", { class: "btn", onclick: () => this._cancel(w) }, "Cancel")))
-      : [h("div", { class: "empty" }, "No One Shots are active. Ask Assist to set one up.")];
+      : (runs.length ? [] : [h("div", { class: "empty" }, "No One Shots are active. Ask Assist to set one up.")]);
+
+    const running = runs.map((r) => h("div", { class: "card" },
+      h("div", { class: "grow" },
+        h("div", { class: "ttl" }, r.title),
+        h("div", { class: "sum" }, r.summary),
+        h("div", { class: "meta" }, `Running: next step in ${remaining(r.resume_at)} · ${r.steps_left} action${r.steps_left === 1 ? "" : "s"} left · ${r.owner}`)),
+      h("span", { class: "pill", style: "background:var(--primary-color)" }, "Running"),
+      h("button", { class: "btn", onclick: () => this._cancel(r) }, "Cancel")));
 
     const past = history.length
       ? history.map((e) => {
@@ -139,7 +148,7 @@ class OneShotPanel extends HTMLElement {
       h("header", {}, this._narrow ? menu : null, "One Shot"),
       h("main", {},
         this._error ? h("div", { class: "err" }, this._error) : null,
-        h("h2", {}, `Active (${watches.length})`), active,
+        h("h2", {}, `Active (${watches.length + runs.length})`), running, active,
         h("h2", {}, "Recent"), past));
   }
 }
