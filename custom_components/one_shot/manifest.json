@@ -1,0 +1,12 @@
+{
+  "domain": "one_shot",
+  "name": "One Shot",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["conversation", "homeassistant", "http", "frontend", "panel_custom", "websocket_api"],
+  "documentation": "https://github.com/me217/ha-one-shot",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/me217/ha-one-shot/issues",
+  "requirements": [],
+  "version": "0.6.7"
+}

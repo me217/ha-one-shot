@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "One Shot",
+        "description": "Let Assist set up 'when X happens, do Y once' rules. Choose what a One Shot may control and who may use it. Admins can always use it.",
+        "data": {
+          "allowed_domains": "Device types a One Shot may control",
+          "admin_only_domains": "Device types only admins may control (subset of the above)",
+          "allowed_users": "Non-admin users allowed to use One Shot (empty = all users)",
+          "allow_anonymous": "Allow requests where the speaker isn't identified (e.g. voice satellites)",
+          "default_expiry_hours": "Default expiry (hours)",
+          "notify_service": "Notification action (e.g. notify.mobile_app_phone)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "One Shot is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "One Shot",
+        "data": {
+          "allowed_domains": "Device types a One Shot may control",
+          "admin_only_domains": "Device types only admins may control (subset of the above)",
+          "allowed_users": "Non-admin users allowed to use One Shot (empty = all users)",
+          "allow_anonymous": "Allow requests where the speaker isn't identified (e.g. voice satellites)",
+          "default_expiry_hours": "Default expiry (hours)",
+          "notify_service": "Notification action (e.g. notify.mobile_app_phone)"
+        }
+      }
+    }
+  }
+}
