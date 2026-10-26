@@ -68,6 +68,17 @@ def _label(watch: dict[str, Any]) -> str:
     return watch.get("title") or watch["summary"][:60]
 
 
+def _brief(flow: dict[str, Any] | None) -> str:
+    """One line for the history table: 'trigger → first action (+N more)'."""
+    if not flow:
+        return ""
+    trig = " or ".join(t["text"] for t in flow["triggers"])
+    acts = [a["text"] for a in flow["actions"] if not a.get("wait")]
+    if not acts:
+        return trig
+    return f"{trig} → {acts[0]}" + (f" (+{len(acts) - 1} more)" if len(acts) > 1 else "")
+
+
 def _fmt_minutes(n: int) -> str:
     hours, mins = divmod(n, 60)
     parts = []
@@ -215,6 +226,7 @@ class WatchManager:
                 "owner": watch.get("owner"),
                 "status": status,
                 "detail": detail,
+                "brief": _brief(watch.get("flow")),
                 "time": dt_util.utcnow().isoformat(),
             },
         )
@@ -234,6 +246,7 @@ class WatchManager:
                     "fires": min((t["when"] for t in w["triggers"] if t.get("when")), default=None),
                     "owner": names[w.get("owner")],
                     "title": _label(w),
+                    "flow": w.get("flow"),
                     **{k: w[k] for k in ("summary", "created", "expires")},
                 }
                 for wid, w in self.watches.items()
@@ -245,6 +258,9 @@ class WatchManager:
                     "summary": r["summary"],
                     "owner": names[r.get("owner")],
                     "resume_at": r["resume_at"],
+                    "flow": r.get("flow"),
+                    "next": r["next"],
+                    "source": r.get("source", ""),
                     "steps_left": len([s for s in r["steps"][r["next"]:] if "delay" not in s]),
                 }
                 for rid, r in self.runs.items()
@@ -264,8 +280,13 @@ class WatchManager:
         built = [self._build_trigger(s) for s in specs]
         triggers = [t for t, _ in built]
         trigger_text = " or ".join(txt for _, txt in built)
-        conditions, cond_text = self._build_conditions(args.get("conditions") or [])
-        actions, action_text = self._build_actions(args.get("actions") or [], is_admin)
+        conditions, cond_text, cond_parts = self._build_conditions(args.get("conditions") or [])
+        actions, action_text, action_parts = self._build_actions(args.get("actions") or [], is_admin)
+        flow = {
+            "triggers": [{"kind": s.get("trigger_type"), "text": txt} for s, (_, txt) in zip(specs, built)],
+            "conditions": cond_parts,
+            "actions": action_parts,
+        }
 
         hours = int(args.get("expires_hours") or self.default_expiry_hours)
         if not 1 <= hours <= MAX_EXPIRY_HOURS:
@@ -307,6 +328,7 @@ class WatchManager:
                 "triggers": triggers,
                 "conditions": conditions,
                 "actions": actions,
+                "flow": flow,
                 "expires_hours": hours,
                 "owner": user_id,
                 "marker": marker or {},
@@ -360,6 +382,7 @@ class WatchManager:
             "triggers": triggers,
             "conditions": spec["conditions"],
             "actions": spec["actions"],
+            "flow": spec.get("flow"),
             "owner": spec.get("owner"),
             "created": now.isoformat(),
             "expires": expires.isoformat(),
@@ -592,6 +615,7 @@ class WatchManager:
             "summary": watch["summary"],
             "owner": watch.get("owner"),
             "steps": watch["actions"],
+            "flow": watch.get("flow"),
             "next": 0,
             "resume_at": None,
             "source": source,
@@ -826,12 +850,12 @@ class WatchManager:
 
     def _build_actions(
         self, raw: list[dict[str, Any]], is_admin: bool = False
-    ) -> tuple[list[dict[str, Any]], str]:
+    ) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]]]:
         if not raw:
             raise WatchError("At least one action is required.")
         if len(raw) > 5:
             raise WatchError("At most 5 actions per One Shot.")
-        actions, texts = [], []
+        actions, texts, parts = [], [], []
         for item in raw:
             if item.get("wait_minutes"):
                 n = int(item["wait_minutes"])
@@ -839,6 +863,7 @@ class WatchManager:
                     raise WatchError("A wait step must be between 1 and 120 minutes.")
                 actions.append({"delay": {"minutes": n}})
                 texts.append(f"wait {_fmt_minutes(n)}")
+                parts.append({"wait": True, "text": f"Wait {_fmt_minutes(n)}"})
                 continue
             service = (item.get("action") or "").strip().lower()
             if service and "." not in service and item.get("entity_ids"):
@@ -871,9 +896,11 @@ class WatchManager:
             actions.append(step)
             who = ", ".join(self._name(e) for e in entities)
             texts.append(f"run {service}" + (f" on {who}" if who else ""))
+            verb = name.replace("_", " ")
+            parts.append({"wait": False, "text": f"{who}: {verb}" if who else verb})
         if not any("action" in step for step in actions):
             raise WatchError("At least one real action is required (not just a wait).")
-        return actions, "do: " + ", then ".join(texts)
+        return actions, "do: " + ", then ".join(texts), parts
 
     def _unavailable(self, actions: list[dict[str, Any]]) -> list[str]:
         """Names of action targets that are offline right now (a service call silently skips them)."""
@@ -885,7 +912,7 @@ class WatchManager:
                     names.append(st.name)
         return names
 
-    def _build_conditions(self, raw: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
+    def _build_conditions(self, raw: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, list[str]]:
         """Extra checks made at the moment a trigger fires (like automation conditions)."""
         if len(raw) > 5:
             raise WatchError("At most 5 conditions per One Shot.")
@@ -948,7 +975,7 @@ class WatchManager:
                 raise WatchError("condition_type must be one of: state, numeric, time, sun.")
             confs.append(conf)
             texts.append(text)
-        return confs, (", but only if " + " and ".join(texts)) if texts else ""
+        return confs, (", but only if " + " and ".join(texts)) if texts else "", texts
 
     def _warnings(self, specs: list[dict[str, Any]]) -> list[str]:
         warnings = []

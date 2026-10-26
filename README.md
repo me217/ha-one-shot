@@ -7,7 +7,7 @@
 > *"In 25 minutes, turn the media room lights on."*
 > *"Tonight at 9, close the garage, then turn the porch light off 10 minutes later."*
 
-> Status: early version (0.6), tested on a single setup (Home Assistant with a local LLM). Written against HA 2024.10+ APIs. Bug reports welcome in Issues.
+> Status: early version (0.8), tested on a single setup (Home Assistant with a local LLM). Written against HA 2024.10+ APIs. Bug reports welcome in Issues.
 
 ## Why it exists
 
@@ -61,7 +61,7 @@ It understands who is asking: "if **I'm** home" resolves to the person linked to
 
 ## The sidebar page and sensor
 
-- **One Shot** in the sidebar (admins): active One Shots with a countdown, owner, and a Cancel button; a Recent list of what fired, failed, was skipped, expired or was cancelled, including which trigger fired it.
+- **One Shot** in the sidebar (admins): summary tiles (armed, running, completed and failed in the last 7 days), then each active One Shot drawn as a flow (trigger, "only if" conditions, actions and waits) with a countdown, owner and Cancel button. A running One Shot highlights the step it is on. Below that is a Recent table (last 100) that scrolls after 5 rows, with status filter chips, showing what fired, failed, was skipped, expired or was cancelled. One Shots armed before 0.8 show their summary text instead of the flow.
 - **`sensor.one_shot_active`**: count of active One Shots, with the list as attributes. Use it on your own dashboards.
 - **Logbook**: arming, firing, skipping, expiry and cancelling all appear under "One Shot".
 - **Events**: `one_shot_completed` and `one_shot_expired` fire on the HA bus so you can chain your own automations.
