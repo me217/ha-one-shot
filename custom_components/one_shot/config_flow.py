@@ -16,6 +16,7 @@ from .const import (
     CONF_ALLOWED_DOMAINS,
     CONF_ALLOWED_USERS,
     CONF_DEFAULT_EXPIRY_HOURS,
+    CONF_LOG_REQUESTS,
     CONF_NOTIFY_SERVICE,
     DEFAULT_ALLOWED_DOMAINS,
     DEFAULT_EXPIRY_HOURS,
@@ -84,6 +85,9 @@ def _schema(defaults: dict[str, Any], users: list[selector.SelectOptionDict]) ->
                 CONF_NOTIFY_SERVICE,
                 default=defaults.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE),
             ): str,
+            vol.Required(
+                CONF_LOG_REQUESTS, default=defaults.get(CONF_LOG_REQUESTS, False)
+            ): bool,
         }
     )
 

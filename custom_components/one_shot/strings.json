@@ -10,7 +10,8 @@
           "allowed_users": "Non-admin users allowed to use One Shot (empty = all users)",
           "allow_anonymous": "Allow requests where the speaker isn't identified (e.g. voice satellites)",
           "default_expiry_hours": "Default expiry (hours)",
-          "notify_service": "Notification action (e.g. notify.mobile_app_phone)"
+          "notify_service": "Notification action (e.g. notify.mobile_app_phone)",
+          "log_requests": "Log every Assist request and response (for debugging)"
         }
       }
     },
@@ -28,7 +29,8 @@
           "allowed_users": "Non-admin users allowed to use One Shot (empty = all users)",
           "allow_anonymous": "Allow requests where the speaker isn't identified (e.g. voice satellites)",
           "default_expiry_hours": "Default expiry (hours)",
-          "notify_service": "Notification action (e.g. notify.mobile_app_phone)"
+          "notify_service": "Notification action (e.g. notify.mobile_app_phone)",
+          "log_requests": "Log every Assist request and response (for debugging)"
         }
       }
     }

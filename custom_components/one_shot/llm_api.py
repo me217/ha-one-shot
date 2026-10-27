@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -135,18 +136,27 @@ class _Base(llm.Tool):
     ) -> dict[str, Any]:
         context = getattr(llm_context, "context", None)
         user_id = context.user_id if context else None
+        verbose = self.manager.log_requests
+        if verbose:
+            _LOGGER.info(
+                "One Shot request: tool=%s user=%s args=%s",
+                self.name, user_id, json.dumps(tool_input.tool_args, default=str),
+            )
         try:
-            return await self._run(tool_input.tool_args, user_id, _turn_marker(llm_context))
+            result = await self._run(tool_input.tool_args, user_id, _turn_marker(llm_context))
         except WatchError as err:
-            return {"status": "error", "error": str(err)}
+            result = {"status": "error", "error": str(err)}
         except vol.Invalid as err:
-            return {"status": "error", "error": f"Invalid configuration: {err}"}
+            result = {"status": "error", "error": f"Invalid configuration: {err}"}
         except Exception as err:  # noqa: BLE001 - never let a tool crash the whole Assist request
             _LOGGER.exception("One Shot tool %s failed", self.name)
-            return {
+            result = {
                 "status": "error",
                 "error": f"Internal error ({type(err).__name__}); tell the user it failed and to check the Home Assistant log.",
             }
+        if verbose:
+            _LOGGER.info("One Shot response: tool=%s result=%s", self.name, json.dumps(result, default=str)[:2000])
+        return result
 
     async def _run(
         self, args: dict[str, Any], user_id: str | None, marker: dict[str, Any]

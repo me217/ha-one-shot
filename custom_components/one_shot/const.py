@@ -10,6 +10,7 @@ CONF_ALLOWED_USERS = "allowed_users"
 CONF_ALLOW_ANONYMOUS = "allow_anonymous"
 CONF_ADMIN_ONLY_DOMAINS = "admin_only_domains"
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_LOG_REQUESTS = "log_requests"
 
 # Deliberately excludes lock, alarm_control_panel, etc. The user can add them in options.
 DEFAULT_ALLOWED_DOMAINS = [

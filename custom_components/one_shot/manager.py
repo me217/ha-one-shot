@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
+import math
 import secrets
 import time
 from typing import Any
@@ -36,6 +37,7 @@ from .const import (
     CONF_ALLOWED_DOMAINS,
     CONF_ALLOWED_USERS,
     CONF_DEFAULT_EXPIRY_HOURS,
+    CONF_LOG_REQUESTS,
     CONF_NOTIFY_SERVICE,
     DEFAULT_ALLOWED_DOMAINS,
     DEFAULT_EXPIRY_HOURS,
@@ -150,6 +152,10 @@ class WatchManager:
     @property
     def default_expiry_hours(self) -> int:
         return int(self.entry.options.get(CONF_DEFAULT_EXPIRY_HOURS, DEFAULT_EXPIRY_HOURS))
+
+    @property
+    def log_requests(self) -> bool:
+        return bool(self.entry.options.get(CONF_LOG_REQUESTS, False))
 
     @property
     def notify_service(self) -> str:
@@ -291,6 +297,11 @@ class WatchManager:
         hours = int(args.get("expires_hours") or self.default_expiry_hours)
         if not 1 <= hours <= MAX_EXPIRY_HOURS:
             raise WatchError(f"Expiry must be between 1 and {MAX_EXPIRY_HOURS} hours.")
+        # The expiry clock starts now, but a time condition ("only after 6pm") may not be open
+        # for hours yet; count the expiry from when the window first opens so it can't lapse first.
+        wait = self._time_window_wait(conditions)
+        if wait:
+            hours = min(hours + math.ceil(wait.total_seconds() / 3600), MAX_EXPIRY_HOURS)
 
         # Prove the HA engines accept it before the user is asked to confirm.
         ha_triggers = [t for t in triggers if t["platform"] != "at"]
@@ -976,6 +987,32 @@ class WatchManager:
             confs.append(conf)
             texts.append(text)
         return confs, (", but only if " + " and ".join(texts)) if texts else "", texts
+
+    @staticmethod
+    def _time_window_wait(conditions: list[dict[str, Any]]) -> timedelta | None:
+        """How long until every time condition is first satisfiable (None if already open)."""
+        windows = [c for c in conditions if c.get("condition") == "time"]
+        if not windows:
+            return None
+        now = dt_util.now()
+        for offset in range(8):
+            day = (now + timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+            start, end = day, day + timedelta(days=1)
+            ok = True
+            for c in windows:
+                if c.get("weekday") and _WEEKDAYS[day.weekday()] not in c["weekday"]:
+                    ok = False
+                    break
+                if c.get("after"):
+                    h, m, _ = (int(x) for x in c["after"].split(":"))
+                    start = max(start, day.replace(hour=h, minute=m))
+                if c.get("before"):
+                    h, m, _ = (int(x) for x in c["before"].split(":"))
+                    end = min(end, day.replace(hour=h, minute=m))
+            if ok and end > start and end > now:
+                wait = start - now
+                return wait if wait > timedelta(0) else None
+        return None
 
     def _warnings(self, specs: list[dict[str, Any]]) -> list[str]:
         warnings = []
